@@ -7,6 +7,8 @@ use FileIO;
 use FastaIO;
 
 # Constants
+my $min_len = 24;
+my $max_len = 32;
 $|=1; #Autoflush
 # Variables
 my %tar_gene_hits = ();
@@ -82,7 +84,7 @@ foreach my $pic (sort keys %{$pic_pgenes}) {
 		## Map reads to gene set
 		my $map_outfile = $map_files_dir.'/'.$pic.'.'.$pg_id.'_PG.hits.cdna.map';
 		unless (-e $map_outfile) {
-			system("./seqmap 4 $reads_outfile $coding_cdna_file $map_outfile /output_all_matches >.stdout");
+			system("./seqmap 2 $reads_outfile $coding_cdna_file $map_outfile /output_all_matches >.stdout");
 		}
 		unlink($reads_outfile);
 		#unlink('.stdout');
@@ -101,42 +103,18 @@ foreach my $pic (sort keys %{$pic_pgenes}) {
 			my $pir_seq = $d[4];
 			my $hit_mms = $d[5];
 			my $hit_str = $d[6];
+			my $hit_len = length($hit_seq);
 			my($gen_eid) = ($gen_inf =~ /gene:(\S+)/);
 			my($gen_sym) = ($gen_inf =~ /gene_symbol:(\S+)/);
 			unless ($gen_sym) { $gen_sym = $gen_eid }
 			# Skip if hit is not on minus strand
 			unless ($hit_str eq '-') { next }
-			# Check if hit obeys piRNA targeting rules
-			# Compare seed region
-			my $seed_mms = 0;
-			for (my $i = 1; $i <= 6; $i++) {
-				# Get bases of current position
-				my $pir_bp = substr($pir_seq, $i, 1);
-				my $hit_bp = substr($hit_seq, $i, 1);
-				# Compare pir and target base
-				if ($pir_bp ne $hit_bp) {
-					# Check if mismatch is GU wobble pair
-					my $wobble = 0;
-					if ($pir_bp eq 'G' && $hit_bp eq 'A') { $wobble = 1 }
-					if ($pir_bp eq 'T' && $hit_bp eq 'C') { $wobble = 1 }
-					unless ($wobble) { $seed_mms++ }
-				}
-			}
-			# Skip if seed contains mismatch
-			if ($seed_mms) { next }
-			# Compare non-seed region
-			my $pir_nonseed = substr($pir_seq, 7, length($pir_seq)-7);
-			my $hit_nonseed = substr($hit_seq, 7, length($hit_seq)-7);
-			# Get non-seed mismatches
-			my $nonseed_mms = HammingDistance($pir_nonseed, $hit_nonseed);
-			# Save target if hit obeys piRNA targeting rules
-			if ($seed_mms == 0 && $nonseed_mms <= 3) {
-				$tar_gene_hits{$pic}{$pg_id}{$gen_eid} += $hit_cnt;
-				$tar_gene_syms{$pic}{$pg_id}{$gen_eid} = $gen_eid."\t".$gen_sym;
-				$tar_gene_syms_all{$gen_eid} = $gen_eid."\t".$gen_sym;
-			}
+			unless ($hit_len >= $min_len && $hit_len <= $max_len) { next }
+			# Save target
+			$tar_gene_hits{$pic}{$pg_id}{$gen_eid} += $hit_cnt;
+			$tar_gene_syms{$pic}{$pg_id}{$gen_eid} = $gen_eid."\t".$gen_sym;
+			$tar_gene_syms_all{$gen_eid} = $gen_eid."\t".$gen_sym;
 		}
-		
 		print($out_tg "#$pic\t$pg_id\t$pgp_sym\n");
 		# Go through each target gene
 		foreach my $tar_id (sort {$tar_gene_hits{$pic}{$pg_id}{$b} <=> $tar_gene_hits{$pic}{$pg_id}{$a} } keys %{$tar_gene_hits{$pic}{$pg_id}}) {
@@ -157,18 +135,6 @@ my $out_tg2 = FileIO::open_outfile($outfile_tg2);
 foreach my $tar_id (sort {$hits_per_target{$b} <=> $hits_per_target{$a} } keys %hits_per_target) {
 	printf($out_tg2 "%s\t%.2f\n", $tar_gene_syms_all{$tar_id},$hits_per_target{$tar_id});
 }
-
-
-# Go through each pseudogene-containing piC
-#foreach my $pic (sort keys %{$pic_pgenes}) {
-	# Go through each pseudogene
-#	foreach my $pg_id (sort keys %{$pic_pgenes->{$pic}}) {
-		# Go through each target gene
-#		foreach my $tar_id (%{$tar_gene_hits{$pic}{$pg_id}}) {
-#			print($out "$tar_gene_syms{$pic}{$pg_id}{$gen_eid}\t$tar_gene_hits{$pic}{$pg_id}{$gen_eid}\n");
-#		}
-#	}
-#}
 
 exit;
 
